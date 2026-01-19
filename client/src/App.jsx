@@ -19,6 +19,30 @@ function App() {
   const pdfDocRef = useRef(null); // { pdf, buffer }
   const [pageIndex, setPageIndex] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
+  // Custom font embedding support
+  const [uploadedFontServerPath, setUploadedFontServerPath] = useState("");
+  const [uploadedFontFaceName, setUploadedFontFaceName] = useState("");
+  const [useUploadedFont, setUseUploadedFont] = useState(false);
+
+  const uploadCustomFont = async (fileObj) => {
+    if (!fileObj) return;
+    // 1) Upload font file to server to be embedded when saving
+    const form = new FormData();
+    form.append("font", fileObj);
+    const res = await fetch("http://localhost:5000/font/upload", { method: "POST", body: form });
+    const data = await res.json();
+    setUploadedFontServerPath(data.fontPath);
+    // 2) Load the same font in browser for accurate preview/measurements
+    const blobUrl = URL.createObjectURL(fileObj);
+    const family = "CustomFont"; // fixed family name referenced in preview
+    const ff = new FontFace(family, `url(${blobUrl})`);
+    await ff.load();
+    document.fonts.add(ff);
+    await document.fonts.ready;
+    setUploadedFontFaceName(family);
+    setUseUploadedFont(true);
+    setOverrideFamily(family);
+  };
 
   const uploadPdf = async () => {
     const form = new FormData();
@@ -130,17 +154,24 @@ function App() {
     const text = newText ?? "";
     if (!text) return;
 
-    // Resolve styles
-    const fam = (overrideFamily || "").toLowerCase();
-    let cssFamily = "Helvetica, Arial, sans-serif";
-    if (/times/.test(fam)) cssFamily = '"Times New Roman", Times, serif';
-    else if (/courier/.test(fam)) cssFamily = '"Courier New", Courier, monospace';
-    else if (/helvetica/.test(fam)) cssFamily = "Helvetica, Arial, sans-serif";
-    else if (!overrideFamily) {
-      const detected = (selected.fontFamily || "").toLowerCase();
-      if (/times/.test(detected)) cssFamily = '"Times New Roman", Times, serif';
-      else if (/courier/.test(detected)) cssFamily = '"Courier New", Courier, monospace';
-      else cssFamily = "Helvetica, Arial, sans-serif";
+    // Resolve styles (map many names to base CSS stacks). Prefer uploaded font when enabled.
+    let cssFamily = "Helvetica, Arial, sans-serif"; // default group: Arial/Calibri/Verdana/Tahoma/Trebuchet
+    if (useUploadedFont && uploadedFontFaceName) {
+      cssFamily = `${uploadedFontFaceName}, ${cssFamily}`;
+    } else {
+      const fam = (overrideFamily || "").toLowerCase();
+      if (/(times|georgia|garamond|palatino|serif)/.test(fam)) {
+        cssFamily = '"Times New Roman", Times, serif';
+      } else if (/(courier|monospace|consolas|monaco|menlo|inconsolata|source code)/.test(fam)) {
+        cssFamily = '"Courier New", Courier, monospace';
+      } else if (/helvetica|arial|calibri|verdana|tahoma|trebuchet/.test(fam)) {
+        cssFamily = 'Helvetica, Arial, sans-serif';
+      } else if (!overrideFamily) {
+        const detected = (selected.fontFamily || "").toLowerCase();
+        if (/(times|georgia|garamond|palatino|serif)/.test(detected)) cssFamily = '"Times New Roman", Times, serif';
+        else if (/(courier|monospace)/.test(detected)) cssFamily = '"Courier New", Courier, monospace';
+        else cssFamily = 'Helvetica, Arial, sans-serif';
+      }
     }
 
     const bold = typeof overrideBold === "boolean" ? overrideBold : !!selected?.isBold;
@@ -223,6 +254,7 @@ function App() {
           overrideItalic: overrideItalic,
           overrideSize: overrideSize === "" ? undefined : Number(overrideSize),
           overrideColor: useCustomColor ? overrideColor : undefined,
+          embedFontPath: useUploadedFont ? uploadedFontServerPath : undefined,
         }]
       })
     });
@@ -333,6 +365,28 @@ function App() {
             >
               Save PDF
             </button>
+            <label className="inline-flex items-center gap-2 text-sm text-gray-700">
+              Upload font
+              <input
+                type="file"
+                accept=".ttf,.otf,font/ttf,font/otf"
+                onChange={async (e) => {
+                  const f = e.target.files?.[0];
+                  if (f) await uploadCustomFont(f);
+                }}
+                className="block text-sm text-gray-700 file:mr-2 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
+              />
+            </label>
+            <label className="inline-flex items-center gap-2 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                checked={useUploadedFont}
+                onChange={(e) => setUseUploadedFont(e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                disabled={!uploadedFontFaceName}
+              />
+              Use uploaded font
+            </label>
             <select
               value={overrideFamily}
               onChange={(e) => setOverrideFamily(e.target.value)}
@@ -340,8 +394,23 @@ function App() {
               className="rounded-md border border-gray-300 bg-white px-2 py-2 text-sm shadow-sm"
             >
               <option value="">Auto (detected)</option>
+              {/* Sans / Helvetica group */}
+              <option value="Arial">Arial</option>
+              <option value="Calibri">Calibri</option>
+              <option value="Verdana">Verdana</option>
+              <option value="Tahoma">Tahoma</option>
+              <option value="Trebuchet MS">Trebuchet MS</option>
               <option value="Helvetica">Helvetica</option>
+              {/* Serif / Times group */}
+              <option value="Times New Roman">Times New Roman</option>
+              <option value="Georgia">Georgia</option>
+              <option value="Garamond">Garamond</option>
+              <option value="Palatino">Palatino</option>
               <option value="Times">Times</option>
+              {/* Monospace / Courier group */}
+              <option value="Courier New">Courier New</option>
+              <option value="Consolas">Consolas</option>
+              <option value="Monaco">Monaco</option>
               <option value="Courier">Courier</option>
             </select>
             <select

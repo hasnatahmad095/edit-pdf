@@ -18,6 +18,13 @@ app.post("/upload", upload.single("pdf"), (req, res) => {
 });
 
 /**
+ * Upload Font (TTF/OTF)
+ */
+app.post("/font/upload", upload.single("font"), (req, res) => {
+  res.json({ fontPath: req.file.path });
+});
+
+/**
  * Edit text in PDF
  */
 app.post("/edit", async (req, res) => {
@@ -31,11 +38,12 @@ app.post("/edit", async (req, res) => {
   const fontCache = new Map();
   const pickStandardFont = (fontFamily = "", isBold = false, isItalic = false) => {
     const fam = String(fontFamily).toLowerCase();
-    const family = /times/.test(fam)
-      ? "Times"
-      : /courier/.test(fam)
-      ? "Courier"
-      : "Helvetica"; // default for Arial/Calibri/Sans etc.
+    // Group common names to base PDF families
+    let family = "Helvetica";
+    if (/(times|georgia|garamond|palatino|serif)/.test(fam)) family = "Times";
+    else if (/(courier|monospace|consolas|monaco|menlo|inconsolata|source code)/.test(fam)) family = "Courier";
+    else if (/(helvetica|arial|calibri|verdana|tahoma|trebuchet)/.test(fam)) family = "Helvetica";
+
     const style = isBold && isItalic ? "BoldItalic" : isBold ? "Bold" : isItalic ? "Oblique" : "Regular";
     // Map to StandardFonts keys
     if (family === "Times") {
@@ -56,6 +64,9 @@ app.post("/edit", async (req, res) => {
     if (style === "Oblique") return StandardFonts.HelveticaOblique;
     return StandardFonts.Helvetica;
   };
+
+  // Cache embedded fonts by path or StandardFont key
+  const embeddedCache = new Map();
 
   for (const edit of edits) {
     const page = pages[edit.pageIndex];
@@ -86,11 +97,22 @@ app.post("/edit", async (req, res) => {
       color: rgb(1, 1, 1),
     });
 
-    const fontKey = `${pickStandardFont(resolvedFamily, resolvedBold, resolvedItalic)}`;
-    let font = fontCache.get(fontKey);
-    if (!font) {
-      font = await pdfDoc.embedFont(pickStandardFont(resolvedFamily, resolvedBold, resolvedItalic));
-      fontCache.set(fontKey, font);
+    let font;
+    if (edit.embedFontPath) {
+      const key = `embedded:${edit.embedFontPath}`;
+      font = embeddedCache.get(key);
+      if (!font) {
+        const fontBytes = fs.readFileSync(edit.embedFontPath);
+        font = await pdfDoc.embedFont(fontBytes, { subset: true });
+        embeddedCache.set(key, font);
+      }
+    } else {
+      const fontKey = `${pickStandardFont(resolvedFamily, resolvedBold, resolvedItalic)}`;
+      font = fontCache.get(fontKey);
+      if (!font) {
+        font = await pdfDoc.embedFont(pickStandardFont(resolvedFamily, resolvedBold, resolvedItalic));
+        fontCache.set(fontKey, font);
+      }
     }
 
     // Decide final size
