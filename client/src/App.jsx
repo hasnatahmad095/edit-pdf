@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import pdfjsLib from "./pdfWorker";
 
 function App() {
@@ -15,6 +15,7 @@ function App() {
   const [overrideColor, setOverrideColor] = useState("#000000");
   const [useCustomColor, setUseCustomColor] = useState(false);
   const canvasRef = useRef(null);
+  const previewCanvasRef = useRef(null);
 
   const uploadPdf = async () => {
     const form = new FormData();
@@ -91,6 +92,94 @@ function App() {
     setTextItems(items);
   };
 
+  // Keep preview canvas in sync with viewport size
+  useEffect(() => {
+    const p = previewCanvasRef.current;
+    if (!p) return;
+    p.width = viewportSize.width || 0;
+    p.height = viewportSize.height || 0;
+  }, [viewportSize]);
+
+  // Draw real-time preview of the edit
+  useEffect(() => {
+    const p = previewCanvasRef.current;
+    if (!p) return;
+    const ctx = p.getContext("2d");
+    // clear full canvas
+    ctx.clearRect(0, 0, p.width, p.height);
+    if (!selected) return;
+    const text = newText ?? "";
+    if (!text) return;
+
+    // Resolve styles
+    const fam = (overrideFamily || "").toLowerCase();
+    let cssFamily = "Helvetica, Arial, sans-serif";
+    if (/times/.test(fam)) cssFamily = '"Times New Roman", Times, serif';
+    else if (/courier/.test(fam)) cssFamily = '"Courier New", Courier, monospace';
+    else if (/helvetica/.test(fam)) cssFamily = "Helvetica, Arial, sans-serif";
+    else if (!overrideFamily) {
+      const detected = (selected.fontFamily || "").toLowerCase();
+      if (/times/.test(detected)) cssFamily = '"Times New Roman", Times, serif';
+      else if (/courier/.test(detected)) cssFamily = '"Courier New", Courier, monospace';
+      else cssFamily = "Helvetica, Arial, sans-serif";
+    }
+
+    const bold = typeof overrideBold === "boolean" ? overrideBold : !!selected?.isBold;
+    const italic = typeof overrideItalic === "boolean" ? overrideItalic : !!selected?.isItalic;
+
+    // Base size from selection, override if provided; shrink to fit if needed
+    const targetBoxW = selected.width;
+    const targetBoxH = selected.height;
+    let size = typeof overrideSize === "number" && !Number.isNaN(overrideSize)
+      ? Number(overrideSize)
+      : Number(selected.fontSize) || 12;
+
+    ctx.textBaseline = "top"; // we position by top-left of detected box
+    ctx.font = `${italic ? "italic " : ""}${bold ? "bold " : ""}${size}px ${cssFamily}`;
+
+    const measured = ctx.measureText(text).width;
+    if (measured > 0 && measured > targetBoxW) {
+      const scale = targetBoxW / measured;
+      size = Math.max(1, Math.floor(size * scale));
+      ctx.font = `${italic ? "italic " : ""}${bold ? "bold " : ""}${size}px ${cssFamily}`;
+    }
+
+    // compute spacing to fill width similar to server logic
+    const widthAtSize = ctx.measureText(text).width;
+    const glyphCount = Math.max(text.length - 1, 1);
+    const spacing = glyphCount > 0 ? (targetBoxW - widthAtSize) / glyphCount : 0;
+
+    // color
+    const hex = (useCustomColor ? overrideColor : "#000000") || "#000000";
+    const m = /^#?([\da-f]{2})([\da-f]{2})([\da-f]{2})$/i.exec(hex);
+    const r = m ? parseInt(m[1], 16) : 0;
+    const g = m ? parseInt(m[2], 16) : 0;
+    const b = m ? parseInt(m[3], 16) : 0;
+    ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+
+    // Optionally white-out area to simulate replacement
+    ctx.save();
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(selected.x, selected.y, selected.width, selected.height);
+    ctx.restore();
+    // Re-set fillStyle for text after white-out
+    ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+
+    // Draw text with per-character spacing
+    let x = selected.x;
+    const y = selected.y; // top-aligned
+    if (!text || !Number.isFinite(spacing)) {
+      ctx.fillText(text, x, y);
+    } else {
+      for (let i = 0; i < text.length; i++) {
+        const ch = text[i];
+        ctx.fillText(ch, x, y);
+        const w = ctx.measureText(ch).width;
+        x += w + spacing;
+      }
+    }
+  }, [selected, newText, overrideFamily, overrideBold, overrideItalic, overrideSize, overrideColor, useCustomColor, viewportSize]);
+
   const saveEdit = async () => {
     const res = await fetch("http://localhost:5000/edit", {
       method: "POST",
@@ -146,6 +235,10 @@ function App() {
         }}
       >
         <canvas ref={canvasRef} style={{ display: "block" }} />
+        <canvas
+          ref={previewCanvasRef}
+          style={{ position: "absolute", left: 0, top: 0, pointerEvents: "none" }}
+        />
         <div
           style={{
             position: "absolute",
