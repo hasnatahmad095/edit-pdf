@@ -8,6 +8,12 @@ function App() {
   const [selected, setSelected] = useState(null);
   const [newText, setNewText] = useState("");
   const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
+  const [overrideFamily, setOverrideFamily] = useState("");
+  const [overrideBold, setOverrideBold] = useState(null);
+  const [overrideItalic, setOverrideItalic] = useState(null);
+  const [overrideSize, setOverrideSize] = useState("");
+  const [overrideColor, setOverrideColor] = useState("#000000");
+  const [useCustomColor, setUseCustomColor] = useState(false);
   const canvasRef = useRef(null);
 
   const uploadPdf = async () => {
@@ -104,6 +110,11 @@ function App() {
           ascent: selected.ascent,
           descent: selected.descent,
           newText,
+          overrideFontFamily: overrideFamily || undefined,
+          overrideBold: overrideBold,
+          overrideItalic: overrideItalic,
+          overrideSize: overrideSize === "" ? undefined : Number(overrideSize),
+          overrideColor: useCustomColor ? overrideColor : undefined,
         }]
       })
     });
@@ -151,6 +162,11 @@ function App() {
               onClick={() => {
                 setSelected(item);
                 setNewText(item.text);
+                setOverrideFamily(item.fontFamily || "");
+                setOverrideBold(item.isBold);
+                setOverrideItalic(item.isItalic);
+                setOverrideSize(item.fontSize || "");
+                setUseCustomColor(false);
               }}
               style={{
                 position: "absolute",
@@ -174,12 +190,73 @@ function App() {
       {selected && (
         <>
           <hr />
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
             <input
               value={newText}
               onChange={(e) => setNewText(e.target.value)}
             />
             <button onClick={saveEdit}>Save PDF</button>
+            <select
+              value={overrideFamily}
+              onChange={(e) => setOverrideFamily(e.target.value)}
+              title="Font family"
+            >
+              <option value="">Auto (detected)</option>
+              <option value="Helvetica">Helvetica</option>
+              <option value="Times">Times</option>
+              <option value="Courier">Courier</option>
+            </select>
+            <select
+              value={overrideBold === null ? "auto" : overrideBold ? "bold" : "regular"}
+              onChange={(e) => {
+                const v = e.target.value;
+                setOverrideBold(v === "auto" ? null : v === "bold");
+              }}
+              title="Font weight"
+            >
+              <option value="auto">Weight: Auto</option>
+              <option value="regular">Regular</option>
+              <option value="bold">Bold</option>
+            </select>
+            <select
+              value={overrideItalic === null ? "auto" : overrideItalic ? "italic" : "normal"}
+              onChange={(e) => {
+                const v = e.target.value;
+                setOverrideItalic(v === "auto" ? null : v === "italic");
+              }}
+              title="Font style"
+            >
+              <option value="auto">Style: Auto</option>
+              <option value="normal">Normal</option>
+              <option value="italic">Italic</option>
+            </select>
+            <input
+              type="number"
+              min={1}
+              step={0.5}
+              value={overrideSize}
+              onChange={(e) => {
+                const val = e.target.value;
+                setOverrideSize(val === "" ? "" : Number(val));
+              }}
+              placeholder={String(selected.fontSize || "")}
+              title="Font size"
+              style={{ width: 90 }}
+            />
+            <label style={{ display: "flex", alignItems: "center", gap: 4 }}>
+              <input
+                type="checkbox"
+                checked={useCustomColor}
+                onChange={(e) => setUseCustomColor(e.target.checked)}
+              />
+              Color
+              <input
+                type="color"
+                value={overrideColor}
+                onChange={(e) => setOverrideColor(e.target.value)}
+                disabled={!useCustomColor}
+              />
+            </label>
           </div>
         </>
       )}
