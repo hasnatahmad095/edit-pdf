@@ -15,7 +15,8 @@ function App() {
   const [overrideColor, setOverrideColor] = useState("#000000");
   const [useCustomColor, setUseCustomColor] = useState(false);
   const [overrideSpacingEnabled, setOverrideSpacingEnabled] = useState(false);
-  const [overrideSpacing, setOverrideSpacing] = useState(""); // px in preview space
+  const [overrideSpacing, setOverrideSpacing] = useState("");
+  const [pendingEdits, setPendingEdits] = useState([]);
   const canvasRef = useRef(null);
   const previewCanvasRef = useRef(null);
   const pdfDocRef = useRef(null); // { pdf, buffer }
@@ -25,6 +26,9 @@ function App() {
   const [uploadedFontServerPath, setUploadedFontServerPath] = useState("");
   const [uploadedFontFaceName, setUploadedFontFaceName] = useState("");
   const [useUploadedFont, setUseUploadedFont] = useState(false);
+  const [hoveredIdx, setHoveredIdx] = useState(null);
+  const [saveNotice, setSaveNotice] = useState("");
+  const [saving, setSaving] = useState(false);
 
   const uploadCustomFont = async (fileObj) => {
     if (!fileObj) return;
@@ -66,6 +70,7 @@ function App() {
     pdfDocRef.current = { pdf, buffer };
     setTotalPages(pdf.numPages || 1);
     setPageIndex(0);
+    setPendingEdits([]);
     await renderAndExtract(0);
   };
 
@@ -131,7 +136,72 @@ function App() {
     setTextItems(items);
   };
 
+  const buildItemId = (it) => {
+    if (!it) return "";
+    return `${it.pageIndex}:${it.pdfX}:${it.pdfY}:${it.pdfWidth}:${it.pdfHeight}`;
+  };
+
+  const buildEditFromSelection = (it) => {
+    if (!it) return null;
+    return {
+      id: buildItemId(it),
+      x: it.pdfX,
+      y: it.pdfY,
+      width: it.pdfWidth,
+      height: it.pdfHeight,
+      fontSize: it.fontSize,
+      pageIndex: it.pageIndex,
+      fontFamily: it.fontFamily,
+      isBold: it.isBold,
+      isItalic: it.isItalic,
+      ascent: it.ascent,
+      descent: it.descent,
+      newText,
+      overrideFontFamily: overrideFamily || undefined,
+      overrideBold: overrideBold,
+      overrideItalic: overrideItalic,
+      overrideSize: overrideSize === "" ? undefined : Number(overrideSize),
+      overrideColor: useCustomColor ? overrideColor : undefined,
+      embedFontPath: useUploadedFont ? uploadedFontServerPath : undefined,
+      overrideSpacingPx:
+        overrideSpacingEnabled && typeof overrideSpacing === "number"
+          ? Number(overrideSpacing)
+          : undefined,
+      viewportBoxWidth: it.width,
+    };
+  };
+
+  const selectionHasChanges = (it) => {
+    if (!it) return false;
+    if (newText !== it.text) return true;
+    if (overrideFamily && (overrideFamily || "").toLowerCase() !== (it.fontFamily || "").toLowerCase()) return true;
+    if (overrideBold !== null && overrideBold !== !!it.isBold) return true;
+    if (overrideItalic !== null && overrideItalic !== !!it.isItalic) return true;
+    if (overrideSize !== "" && Number(overrideSize) !== Number(it.fontSize)) return true;
+    if (useCustomColor) return true;
+    if (overrideSpacingEnabled && typeof overrideSpacing === "number") return true;
+    if (useUploadedFont) return true;
+    return false;
+  };
+
+  const maybeQueueCurrentEditIfChanged = () => {
+    if (!selected) return;
+    if (!selectionHasChanges(selected)) return;
+    const edit = buildEditFromSelection(selected);
+    if (!edit) return;
+    setPendingEdits((prev) => {
+      const idx = prev.findIndex((e) => e.id === edit.id);
+      if (idx >= 0) {
+        const next = prev.slice();
+        next[idx] = edit;
+        return next;
+      }
+      return [...prev, edit];
+    });
+  };
+
   const goToPage = async (idx) => {
+    maybeQueueCurrentEditIfChanged();
     const clamped = Math.max(0, Math.min((totalPages || 1) - 1, idx));
     setPageIndex(clamped);
     await renderAndExtract(clamped);
@@ -235,42 +305,50 @@ function App() {
     }
   }, [selected, newText, overrideFamily, overrideBold, overrideItalic, overrideSize, overrideColor, useCustomColor, viewportSize]);
 
-  const saveEdit = async () => {
-    const res = await fetch("http://localhost:5000/edit", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        filePath: pdfPath,
-        edits: [{
-          x: selected.pdfX,
-          y: selected.pdfY,
-          width: selected.pdfWidth,
-          height: selected.pdfHeight,
-          fontSize: selected.fontSize,
-          pageIndex: selected.pageIndex,
-          fontFamily: selected.fontFamily,
-          isBold: selected.isBold,
-          isItalic: selected.isItalic,
-          ascent: selected.ascent,
-          descent: selected.descent,
-          newText,
-          overrideFontFamily: overrideFamily || undefined,
-          overrideBold: overrideBold,
-          overrideItalic: overrideItalic,
-          overrideSize: overrideSize === "" ? undefined : Number(overrideSize),
-          overrideColor: useCustomColor ? overrideColor : undefined,
-          embedFontPath: useUploadedFont ? uploadedFontServerPath : undefined,
-          // spacing override in preview px units; server will convert to PDF units
-          overrideSpacingPx: overrideSpacingEnabled && typeof overrideSpacing === 'number' ? Number(overrideSpacing) : undefined,
-          viewportBoxWidth: selected.width,
-        }]
-      })
-    });
+  useEffect(() => {
+    if (!saveNotice) return;
+    const t = setTimeout(() => setSaveNotice(""), 2000);
+    return () => clearTimeout(t);
+  }, [saveNotice]);
 
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    window.open(url);
+  const saveEdit = async () => {
+    let payloadEdits = (pendingEdits || []).slice();
+    if (selected && selectionHasChanges(selected)) {
+      const cur = buildEditFromSelection(selected);
+      if (cur) {
+        const idx = payloadEdits.findIndex((e) => e.id === cur.id);
+        if (idx >= 0) payloadEdits[idx] = cur; else payloadEdits.push(cur);
+      }
+    }
+    if (!pdfPath || payloadEdits.length === 0) return;
+
+    const editsToSend = payloadEdits.map(({ id, ...rest }) => rest);
+
+    setSaving(true);
+    try {
+      const res = await fetch("http://localhost:5000/edit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          filePath: pdfPath,
+          edits: editsToSend,
+        })
+      });
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      window.open(url);
+      setSaveNotice(`Saved ${payloadEdits.length} edit${payloadEdits.length > 1 ? 's' : ''}`);
+      setPendingEdits([]);
+    } finally {
+      setSaving(false);
+    }
   };
+
+  const queued = pendingEdits || [];
+  const selectedWouldAdd = selected && selectionHasChanges(selected) && !queued.some((e) => e.id === buildItemId(selected));
+  const totalQueuedCount = queued.length + (selectedWouldAdd ? 1 : 0);
+  const canSave = !!pdfPath && totalQueuedCount > 0;
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900 p-4 md:p-6">
@@ -294,7 +372,12 @@ function App() {
         >
           Upload PDF
         </button>
-      </div>
+        {Boolean(saveNotice) && (
+        <div className="fixed bottom-4 right-4 rounded-md bg-gray-900 text-white px-4 py-2 text-sm shadow-lg">
+          {saveNotice}
+        </div>
+      )}
+    </div>
 
       <div className="my-4 h-px w-full bg-gray-200" />
 
@@ -332,6 +415,7 @@ function App() {
             <span
               key={i}
               onClick={() => {
+                maybeQueueCurrentEditIfChanged();
                 setSelected(item);
                 setNewText(item.text);
                 setOverrideFamily(item.fontFamily || "");
@@ -343,14 +427,16 @@ function App() {
                 setOverrideSpacingEnabled(false);
                 setOverrideSpacing("");
               }}
+              onMouseEnter={() => setHoveredIdx(i)}
+              onMouseLeave={() => setHoveredIdx(null)}
               className="absolute cursor-pointer select-none"
               style={{
                 left: item.x,
                 top: item.y,
                 width: item.width,
                 height: item.height,
-                background: selected === item ? "rgba(99,102,241,0.18)" : "transparent",
-                outline: selected === item ? "1px solid rgba(99,102,241,0.9)" : "none",
+                background: selected === item ? "rgba(99,102,241,0.18)" : (hoveredIdx === i ? "rgba(0,0,0,0.06)" : "transparent"),
+                outline: selected === item ? "1px solid rgba(99,102,241,0.9)" : (hoveredIdx === i ? "1px dashed rgba(0,0,0,0.25)" : "none"),
                 color: "transparent",
                 pointerEvents: "auto",
               }}
@@ -372,10 +458,28 @@ function App() {
             />
             <button
               onClick={saveEdit}
-              className="inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700"
+              disabled={!canSave || saving}
+              className="inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50"
             >
-              Save PDF
+              {saving ? 'Saving…' : `Save All${totalQueuedCount > 0 ? ` (${totalQueuedCount})` : ''}`}
             </button>
+            <button
+              onClick={() => setPendingEdits([])}
+              disabled={pendingEdits.length === 0 || saving}
+              className="rounded-md border bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 disabled:opacity-50"
+            >
+              Clear queued
+            </button>
+            <button
+              onClick={() => setPendingEdits((prev) => prev.slice(0, -1))}
+              disabled={pendingEdits.length === 0 || saving}
+              className="rounded-md border bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 disabled:opacity-50"
+            >
+              Undo last
+            </button>
+            <span className="text-sm text-gray-600">
+              {`Queued: ${totalQueuedCount}`}
+            </span>
             <label className="inline-flex items-center gap-2 text-sm text-gray-700">
               Upload font
               <input
