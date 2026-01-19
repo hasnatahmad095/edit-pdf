@@ -373,11 +373,11 @@ function App() {
           Upload PDF
         </button>
         {Boolean(saveNotice) && (
-        <div className="fixed bottom-4 right-4 rounded-md bg-gray-900 text-white px-4 py-2 text-sm shadow-lg">
-          {saveNotice}
-        </div>
-      )}
-    </div>
+          <div className="fixed bottom-4 right-4 rounded-md bg-gray-900 text-white px-4 py-2 text-sm shadow-lg">
+            {saveNotice}
+          </div>
+        )}
+      </div>
 
       <div className="my-4 h-px w-full bg-gray-200" />
 
@@ -448,8 +448,7 @@ function App() {
 
       {selected && (
         <>
-          <div className="my-4 h-px w-full bg-gray-200" />
-          <div className="flex flex-wrap items-center gap-3 rounded-lg border border-gray-200 bg-white p-3 shadow-sm">
+          <div className="left-[50%] translate-x-[-50%] min-w-[1400px] flex flex-wrap items-center gap-3 rounded-lg border border-gray-200 bg-white p-3 fixed bottom-5 z-[999] border border-gray-500">
             <input
               value={newText}
               onChange={(e) => setNewText(e.target.value)}
