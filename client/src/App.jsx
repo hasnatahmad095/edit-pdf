@@ -233,52 +233,56 @@ function App() {
   };
 
   return (
-    <div style={{ padding: 20 }}>
-      <h2>PDF Text Editor</h2>
+    <div className="min-h-screen bg-gray-50 text-gray-900 p-4 md:p-6">
+      <h2 className="text-2xl font-semibold tracking-tight">PDF Text Editor</h2>
 
-      <input
-        type="file"
-        accept="application/pdf"
-        onChange={(e) => setFile(e.target.files[0])}
-      />
+      <div className="mt-4 flex items-center gap-3">
+        <input
+          type="file"
+          accept="application/pdf"
+          onChange={(e) => setFile(e.target.files[0])}
+          className="block text-sm text-gray-700 file:mr-3 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
+        />
+        <button
+          onClick={uploadPdf}
+          disabled={!file}
+          className="inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50"
+        >
+          Upload PDF
+        </button>
+      </div>
 
-      <button onClick={uploadPdf} disabled={!file}>Upload PDF</button>
+      <div className="my-4 h-px w-full bg-gray-200" />
 
-      <hr />
-
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-        <button onClick={() => goToPage(pageIndex - 1)} disabled={pageIndex <= 0}>
+      <div className="flex items-center gap-3 mb-3">
+        <button
+          onClick={() => goToPage(pageIndex - 1)}
+          disabled={pageIndex <= 0}
+          className="rounded-md border bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 disabled:opacity-50"
+        >
           Prev
         </button>
-        <span>
+        <span className="text-sm text-gray-700">
           Page {pageIndex + 1} of {totalPages}
         </span>
-        <button onClick={() => goToPage(pageIndex + 1)} disabled={pageIndex >= (totalPages - 1)}>
+        <button
+          onClick={() => goToPage(pageIndex + 1)}
+          disabled={pageIndex >= (totalPages - 1)}
+          className="rounded-md border bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 disabled:opacity-50"
+        >
           Next
         </button>
       </div>
 
-      <div
-        style={{
-          position: "relative",
-          display: "inline-block",
-          border: "1px solid #ddd",
-        }}
-      >
-        <canvas ref={canvasRef} style={{ display: "block" }} />
+      <div className="relative inline-block rounded-lg border border-gray-200 bg-white shadow-sm">
+        <canvas ref={canvasRef} className="block" />
         <canvas
           ref={previewCanvasRef}
-          style={{ position: "absolute", left: 0, top: 0, pointerEvents: "none" }}
+          className="absolute left-0 top-0 pointer-events-none"
         />
         <div
-          style={{
-            position: "absolute",
-            left: 0,
-            top: 0,
-            width: viewportSize.width,
-            height: viewportSize.height,
-            pointerEvents: "none",
-          }}
+          className="absolute left-0 top-0 pointer-events-none"
+          style={{ width: viewportSize.width, height: viewportSize.height }}
         >
           {textItems.map((item, i) => (
             <span
@@ -292,17 +296,15 @@ function App() {
                 setOverrideSize(item.fontSize || "");
                 setUseCustomColor(false);
               }}
+              className="absolute cursor-pointer select-none"
               style={{
-                position: "absolute",
                 left: item.x,
                 top: item.y,
                 width: item.width,
                 height: item.height,
-                background: selected === item ? "rgba(255,0,0,0.15)" : "transparent",
-                outline: selected === item ? "1px solid red" : "none",
-                cursor: "pointer",
+                background: selected === item ? "rgba(99,102,241,0.18)" : "transparent",
+                outline: selected === item ? "1px solid rgba(99,102,241,0.9)" : "none",
                 color: "transparent",
-                userSelect: "none",
                 pointerEvents: "auto",
               }}
               title={item.text}
@@ -313,17 +315,25 @@ function App() {
 
       {selected && (
         <>
-          <hr />
-          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <div className="my-4 h-px w-full bg-gray-200" />
+          <div className="flex flex-wrap items-center gap-3 rounded-lg border border-gray-200 bg-white p-3 shadow-sm">
             <input
               value={newText}
               onChange={(e) => setNewText(e.target.value)}
+              className="min-w-[200px] rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              placeholder="Enter replacement text"
             />
-            <button onClick={saveEdit}>Save PDF</button>
+            <button
+              onClick={saveEdit}
+              className="inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700"
+            >
+              Save PDF
+            </button>
             <select
               value={overrideFamily}
               onChange={(e) => setOverrideFamily(e.target.value)}
               title="Font family"
+              className="rounded-md border border-gray-300 bg-white px-2 py-2 text-sm shadow-sm"
             >
               <option value="">Auto (detected)</option>
               <option value="Helvetica">Helvetica</option>
@@ -337,6 +347,7 @@ function App() {
                 setOverrideBold(v === "auto" ? null : v === "bold");
               }}
               title="Font weight"
+              className="rounded-md border border-gray-300 bg-white px-2 py-2 text-sm shadow-sm"
             >
               <option value="auto">Weight: Auto</option>
               <option value="regular">Regular</option>
@@ -349,6 +360,7 @@ function App() {
                 setOverrideItalic(v === "auto" ? null : v === "italic");
               }}
               title="Font style"
+              className="rounded-md border border-gray-300 bg-white px-2 py-2 text-sm shadow-sm"
             >
               <option value="auto">Style: Auto</option>
               <option value="normal">Normal</option>
@@ -365,13 +377,14 @@ function App() {
               }}
               placeholder={String(selected.fontSize || "")}
               title="Font size"
-              style={{ width: 90 }}
+              className="w-24 rounded-md border border-gray-300 bg-white px-2 py-2 text-sm shadow-sm"
             />
-            <label style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            <label className="inline-flex items-center gap-2 text-sm text-gray-700">
               <input
                 type="checkbox"
                 checked={useCustomColor}
                 onChange={(e) => setUseCustomColor(e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
               />
               Color
               <input
@@ -379,6 +392,7 @@ function App() {
                 value={overrideColor}
                 onChange={(e) => setOverrideColor(e.target.value)}
                 disabled={!useCustomColor}
+                className="h-8 w-10 cursor-pointer disabled:opacity-50"
               />
             </label>
           </div>
