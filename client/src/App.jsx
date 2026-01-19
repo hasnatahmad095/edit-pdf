@@ -16,6 +16,9 @@ function App() {
   const [useCustomColor, setUseCustomColor] = useState(false);
   const canvasRef = useRef(null);
   const previewCanvasRef = useRef(null);
+  const pdfDocRef = useRef(null); // { pdf, buffer }
+  const [pageIndex, setPageIndex] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
 
   const uploadPdf = async () => {
     const form = new FormData();
@@ -28,13 +31,22 @@ function App() {
 
     const data = await res.json();
     setPdfPath(data.filePath);
-    extractText(file);
+    await initPdf(file);
   };
 
-  const extractText = async (file) => {
-    const buffer = await file.arrayBuffer();
+  const initPdf = async (fileObj) => {
+    const buffer = await fileObj.arrayBuffer();
     const pdf = await pdfjsLib.getDocument(buffer).promise;
-    const page = await pdf.getPage(1);
+    pdfDocRef.current = { pdf, buffer };
+    setTotalPages(pdf.numPages || 1);
+    setPageIndex(0);
+    await renderAndExtract(0);
+  };
+
+  const renderAndExtract = async (idx) => {
+    const holder = pdfDocRef.current;
+    if (!holder) return;
+    const page = await holder.pdf.getPage(idx + 1);
 
     const scale = 1.5;
     const viewport = page.getViewport({ scale });
@@ -85,11 +97,18 @@ function App() {
         isItalic,
         ascent,
         descent,
-        pageIndex: 0,
+        pageIndex: idx,
       };
     });
 
+    setSelected(null);
     setTextItems(items);
+  };
+
+  const goToPage = async (idx) => {
+    const clamped = Math.max(0, Math.min((totalPages || 1) - 1, idx));
+    setPageIndex(clamped);
+    await renderAndExtract(clamped);
   };
 
   // Keep preview canvas in sync with viewport size
@@ -226,6 +245,18 @@ function App() {
       <button onClick={uploadPdf} disabled={!file}>Upload PDF</button>
 
       <hr />
+
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+        <button onClick={() => goToPage(pageIndex - 1)} disabled={pageIndex <= 0}>
+          Prev
+        </button>
+        <span>
+          Page {pageIndex + 1} of {totalPages}
+        </span>
+        <button onClick={() => goToPage(pageIndex + 1)} disabled={pageIndex >= (totalPages - 1)}>
+          Next
+        </button>
+      </div>
 
       <div
         style={{
