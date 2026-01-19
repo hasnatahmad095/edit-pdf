@@ -115,15 +115,26 @@ app.post("/edit", async (req, res) => {
       }
     }
 
-    // Decide final size
+    // Decide final size, accounting for custom letter spacing if provided
     const sizeFromHeight = font.sizeAtHeight(hRect);
-    const unitWidth = font.widthOfTextAtSize(edit.newText || "", 1) || 0;
-    const sizeFromWidth = unitWidth > 0 ? (edit.width / unitWidth) : sizeFromHeight;
+    const unitWidthAt1 = font.widthOfTextAtSize(edit.newText || "", 1) || 0;
+    const glyphCount = Math.max((edit.newText || "").length - 1, 1);
+    // Convert override spacing from preview px to PDF units
+    const pxToPdfScale = edit.viewportBoxWidth && edit.viewportBoxWidth > 0 ? (edit.width / edit.viewportBoxWidth) : 1;
+    const overrideSpacingPdf = (typeof edit.overrideSpacingPx === 'number' && !Number.isNaN(edit.overrideSpacingPx))
+      ? edit.overrideSpacingPx * pxToPdfScale
+      : undefined;
+    const sizeFromWidthNoSpacing = unitWidthAt1 > 0 ? (edit.width / unitWidthAt1) : sizeFromHeight;
+    const sizeFromWidthWithSpacing = unitWidthAt1 > 0
+      ? Math.max(1, (edit.width - (glyphCount * (overrideSpacingPdf || 0))) / unitWidthAt1)
+      : sizeFromHeight;
+    const sizeFromWidth = overrideSpacingPdf !== undefined ? sizeFromWidthWithSpacing : sizeFromWidthNoSpacing;
     const autoSize = Math.min(sizeFromHeight, sizeFromWidth);
     const targetSize = overrideSize ? overrideSize : autoSize;
     const widthAtSize = font.widthOfTextAtSize(edit.newText || "", targetSize);
-    const glyphCount = Math.max((edit.newText || "").length - 1, 1);
-    const characterSpacing = (edit.width - widthAtSize) / glyphCount;
+    const characterSpacing = overrideSpacingPdf !== undefined
+      ? overrideSpacingPdf
+      : (edit.width - widthAtSize) / glyphCount;
     // Parse color hex or fallback to black
     const hex = (edit.overrideColor || "#000000").toString();
     const m = /^#?([\da-f]{2})([\da-f]{2})([\da-f]{2})$/i.exec(hex);

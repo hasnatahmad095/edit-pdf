@@ -14,6 +14,8 @@ function App() {
   const [overrideSize, setOverrideSize] = useState("");
   const [overrideColor, setOverrideColor] = useState("#000000");
   const [useCustomColor, setUseCustomColor] = useState(false);
+  const [overrideSpacingEnabled, setOverrideSpacingEnabled] = useState(false);
+  const [overrideSpacing, setOverrideSpacing] = useState(""); // px in preview space
   const canvasRef = useRef(null);
   const previewCanvasRef = useRef(null);
   const pdfDocRef = useRef(null); // { pdf, buffer }
@@ -197,7 +199,10 @@ function App() {
     // compute spacing to fill width similar to server logic
     const widthAtSize = ctx.measureText(text).width;
     const glyphCount = Math.max(text.length - 1, 1);
-    const spacing = glyphCount > 0 ? (targetBoxW - widthAtSize) / glyphCount : 0;
+    const autoSpacingPx = glyphCount > 0 ? (targetBoxW - widthAtSize) / glyphCount : 0;
+    const spacing = (overrideSpacingEnabled && typeof overrideSpacing === 'number' && !Number.isNaN(overrideSpacing))
+      ? Number(overrideSpacing)
+      : autoSpacingPx;
 
     // color
     const hex = (useCustomColor ? overrideColor : "#000000") || "#000000";
@@ -255,6 +260,9 @@ function App() {
           overrideSize: overrideSize === "" ? undefined : Number(overrideSize),
           overrideColor: useCustomColor ? overrideColor : undefined,
           embedFontPath: useUploadedFont ? uploadedFontServerPath : undefined,
+          // spacing override in preview px units; server will convert to PDF units
+          overrideSpacingPx: overrideSpacingEnabled && typeof overrideSpacing === 'number' ? Number(overrideSpacing) : undefined,
+          viewportBoxWidth: selected.width,
         }]
       })
     });
@@ -331,6 +339,9 @@ function App() {
                 setOverrideItalic(item.isItalic);
                 setOverrideSize(item.fontSize || "");
                 setUseCustomColor(false);
+                setUseCustomColor(false);
+                setOverrideSpacingEnabled(false);
+                setOverrideSpacing("");
               }}
               className="absolute cursor-pointer select-none"
               style={{
@@ -466,6 +477,28 @@ function App() {
                 onChange={(e) => setOverrideColor(e.target.value)}
                 disabled={!useCustomColor}
                 className="h-8 w-10 cursor-pointer disabled:opacity-50"
+              />
+            </label>
+            <label className="inline-flex items-center gap-2 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                checked={overrideSpacingEnabled}
+                onChange={(e) => setOverrideSpacingEnabled(e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+              />
+              Letter spacing
+              <input
+                type="number"
+                step={0.1}
+                value={overrideSpacing}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setOverrideSpacing(v === "" ? "" : Number(v));
+                }}
+                disabled={!overrideSpacingEnabled}
+                placeholder="auto"
+                className="w-24 rounded-md border border-gray-300 bg-white px-2 py-2 text-sm shadow-sm disabled:opacity-50"
+                title="Letter spacing in pixels"
               />
             </label>
           </div>
