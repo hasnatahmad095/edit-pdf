@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect } from "react";
 import pdfjsLib from "./pdfWorker";
 
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
+
 function App() {
   const [file, setFile] = useState(null);
   const [pdfPath, setPdfPath] = useState("");
@@ -35,8 +37,9 @@ function App() {
     // 1) Upload font file to server to be embedded when saving
     const form = new FormData();
     form.append("font", fileObj);
-    const res = await fetch("http://localhost:5000/font/upload", { method: "POST", body: form });
+    const res = await fetch(`${API_URL}/font/upload`, { method: "POST", body: form });
     const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Font upload failed");
     setUploadedFontServerPath(data.fontPath);
     // 2) Load the same font in browser for accurate preview/measurements
     const blobUrl = URL.createObjectURL(fileObj);
@@ -54,19 +57,20 @@ function App() {
     const form = new FormData();
     form.append("pdf", file);
 
-    const res = await fetch("http://localhost:5000/upload", {
+    const res = await fetch(`${API_URL}/upload`, {
       method: "POST",
       body: form,
     });
 
     const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "PDF upload failed");
     setPdfPath(data.filePath);
     await initPdf(file);
   };
 
   const initPdf = async (fileObj) => {
     const buffer = await fileObj.arrayBuffer();
-    const pdf = await pdfjsLib.getDocument(buffer).promise;
+    const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(buffer) }).promise;
     pdfDocRef.current = { pdf, buffer };
     setTotalPages(pdf.numPages || 1);
     setPageIndex(0);
@@ -91,13 +95,11 @@ function App() {
     const content = await page.getTextContent();
     const styles = content.styles || {};
     const items = content.items.map((item) => {
-      const [a, b, c, d, e, f] = item.transform;
-      const rect = viewport.convertToViewportRectangle([
-        e,
-        f,
-        e + (item.width || Math.abs(a)),
-        f + (Math.abs(d) || 12),
-      ]);
+      const [a, , , d, e, f] = item.transform;
+      const rect = [
+        ...viewport.convertToViewportPoint(e, f),
+        ...viewport.convertToViewportPoint(e + (item.width || Math.abs(a)), f + (Math.abs(d) || 12)),
+      ];
       const x1 = Math.min(rect[0], rect[2]);
       const y1 = Math.min(rect[1], rect[3]);
       const x2 = Math.max(rect[0], rect[2]);
@@ -251,7 +253,6 @@ function App() {
 
     // Base size from selection, override if provided; shrink to fit if needed
     const targetBoxW = selected.width;
-    const targetBoxH = selected.height;
     let size = typeof overrideSize === "number" && !Number.isNaN(overrideSize)
       ? Number(overrideSize)
       : Number(selected.fontSize) || 12;
@@ -322,11 +323,15 @@ function App() {
     }
     if (!pdfPath || payloadEdits.length === 0) return;
 
-    const editsToSend = payloadEdits.map(({ id, ...rest }) => rest);
+    const editsToSend = payloadEdits.map((edit) => {
+      const rest = { ...edit };
+      delete rest.id;
+      return rest;
+    });
 
     setSaving(true);
     try {
-      const res = await fetch("http://localhost:5000/edit", {
+      const res = await fetch(`${API_URL}/edit`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -334,6 +339,11 @@ function App() {
           edits: editsToSend,
         })
       });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setSaveNotice(data.error || "Save failed");
+        return;
+      }
 
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);

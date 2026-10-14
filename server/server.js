@@ -2,26 +2,54 @@ import express from "express";
 import cors from "cors";
 import multer from "multer";
 import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
 
-const app = express();
-app.use(cors());
-app.use(express.json());
+const PORT = Number(process.env.PORT) || 5000;
+const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || "http://localhost:5173";
+const UPLOAD_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "uploads");
+fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
-const upload = multer({ dest: "uploads/" });
+const app = express();
+app.use(cors({ origin: CLIENT_ORIGIN }));
+app.use(express.json({ limit: "1mb" }));
+
+const MAX_PDF_BYTES = 25 * 1024 * 1024;
+const MAX_FONT_BYTES = 10 * 1024 * 1024;
+
+const pdfUpload = multer({
+  dest: UPLOAD_DIR,
+  limits: { fileSize: MAX_PDF_BYTES },
+  fileFilter: (req, file, cb) => cb(null, file.mimetype === "application/pdf"),
+});
+const fontUpload = multer({
+  dest: UPLOAD_DIR,
+  limits: { fileSize: MAX_FONT_BYTES },
+  fileFilter: (req, file, cb) => cb(null, /\.(ttf|otf)$/i.test(file.originalname)),
+});
+
+// Only allow reading files that multer stored in UPLOAD_DIR; ignore any client-supplied directories.
+const resolveUpload = (p) => {
+  if (typeof p !== "string" || !p) return null;
+  const full = path.join(UPLOAD_DIR, path.basename(p));
+  return fs.existsSync(full) ? full : null;
+};
 
 /**
  * Upload PDF
  */
-app.post("/upload", upload.single("pdf"), (req, res) => {
-  res.json({ filePath: req.file.path });
+app.post("/upload", pdfUpload.single("pdf"), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: "A PDF file is required" });
+  res.json({ filePath: req.file.filename });
 });
 
 /**
  * Upload Font (TTF/OTF)
  */
-app.post("/font/upload", upload.single("font"), (req, res) => {
-  res.json({ fontPath: req.file.path });
+app.post("/font/upload", fontUpload.single("font"), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: "A .ttf or .otf font file is required" });
+  res.json({ fontPath: req.file.filename });
 });
 
 /**
@@ -30,7 +58,11 @@ app.post("/font/upload", upload.single("font"), (req, res) => {
 app.post("/edit", async (req, res) => {
   const { filePath, edits } = req.body;
 
-  const pdfBytes = fs.readFileSync(filePath);
+  const pdfFile = resolveUpload(filePath);
+  if (!pdfFile) return res.status(400).json({ error: "Unknown filePath; upload the PDF first" });
+  if (!Array.isArray(edits)) return res.status(400).json({ error: "edits must be an array" });
+
+  const pdfBytes = fs.readFileSync(pdfFile);
   const pdfDoc = await PDFDocument.load(pdfBytes);
 
   const pages = pdfDoc.getPages();
@@ -70,6 +102,7 @@ app.post("/edit", async (req, res) => {
 
   for (const edit of edits) {
     const page = pages[edit.pageIndex];
+    if (!page) return res.status(400).json({ error: `Invalid pageIndex: ${edit.pageIndex}` });
 
     // Resolve style overrides or fallbacks from detected values
     const resolvedFamily = edit.overrideFontFamily || edit.fontFamily || "";
@@ -99,10 +132,12 @@ app.post("/edit", async (req, res) => {
 
     let font;
     if (edit.embedFontPath) {
-      const key = `embedded:${edit.embedFontPath}`;
+      const fontFile = resolveUpload(edit.embedFontPath);
+      if (!fontFile) return res.status(400).json({ error: "Unknown embedFontPath; upload the font first" });
+      const key = `embedded:${fontFile}`;
       font = embeddedCache.get(key);
       if (!font) {
-        const fontBytes = fs.readFileSync(edit.embedFontPath);
+        const fontBytes = fs.readFileSync(fontFile);
         font = await pdfDoc.embedFont(fontBytes, { subset: true });
         embeddedCache.set(key, font);
       }
@@ -152,12 +187,19 @@ app.post("/edit", async (req, res) => {
   }
 
   const updatedPdf = await pdfDoc.save();
-  const outPath = "uploads/edited.pdf";
-  fs.writeFileSync(outPath, updatedPdf);
-
-  res.download(outPath);
+  res
+    .type("application/pdf")
+    .attachment("edited.pdf")
+    .send(Buffer.from(updatedPdf));
 });
 
-app.listen(5000, () => {
-  console.log("Backend running on http://localhost:5000");
+// Express 5 forwards rejected async handlers here (e.g. a corrupt PDF or font).
+app.use((err, req, res, next) => {
+  console.error(err);
+  const status = err instanceof multer.MulterError ? 400 : 500;
+  res.status(status).json({ error: status === 400 ? err.message : "Failed to process request" });
+});
+
+app.listen(PORT, () => {
+  console.log(`Backend running on http://localhost:${PORT}`);
 });

@@ -10,3 +10,13 @@ server/node_modules/
 dist/
 client/dist/
 server/dist/
+# Uploaded and generated files (may contain private documents)
+uploads/
+server/uploads/
+
+# Logs / OS
+*.log
+.DS_Store
+
+# Local Claude Code settings
+.claude/settings.local.json
