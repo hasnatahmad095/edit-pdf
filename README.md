@@ -145,12 +145,10 @@ All settings are optional; the defaults work for local development.
       "overrideFontFamily": "Helvetica",  // mapped to base fonts if no custom font is used
       "overrideBold": false,
       "overrideItalic": false,
-
-      // Letter spacing (manual override in preview pixels; server converts to PDF units)
+      // Letter spacing (manual override in preview pixel; server converts to PDF units)
       "overrideSpacingPx": 0.8,
       // Width of the selection box in preview pixels (used for unit conversion)
       "viewportBoxWidth": 220,
-
       // Custom font embedding
       "embedFontPath": "<upload-id from /font/upload>"
     }
