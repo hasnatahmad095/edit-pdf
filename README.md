@@ -179,4 +179,10 @@ All settings are optional; the defaults work for local development.
 
 ## License
 
-[MIT](LICENSE) © Hasnat Ahmad
+[MIT](LICENSE)
+
+## Author
+
+Built and maintained by [Hasnat Ahmad](https://www.devhasnatahmad.com/). Need help with a project? [Get in touch](https://www.devhasnatahmad.com/contact).
+
+If this project saved you time, please give it a ⭐ on GitHub.
